@@ -10,8 +10,8 @@ from google.oauth2.credentials import Credentials
 # CONFIGURATION
 # ----------------------------------
 
-SPREADSHEET_ID = "1z0dGCK9gGw6s19DU1eHRe7g9eAFxJlP3WS3f0JLO1wA"
-SHEET_NAME = "calendar"
+SPREADSHEET_ID = "1jGdf22xdBxKTba6TvLkqqP4Hhds35umPqsVR6mYSkx8"
+SHEET_NAME = "2027"
 CALENDAR_ID = "primary"
 
 SCOPES = [
@@ -52,35 +52,57 @@ sheets_service = build(
 )
 
 # ----------------------------------
-# RETRIEVE CALENDAR EVENTS
+# RETRIEVE EVENTS FROM ALL CALENDARS
 # ----------------------------------
 
 events = []
-page_token = None
 
-while True:
-    result = calendar_service.events().list(
-        calendarId=CALENDAR_ID,
-        maxResults=2500,
-        singleEvents=True,
-        orderBy="startTime",
-        pageToken=page_token
-    ).execute()
+# Get all calendars accessible to your account
+calendar_list = calendar_service.calendarList().list().execute()
 
-    events.extend(result.get("items", []))
+calendars = calendar_list.get("items", [])
 
-    page_token = result.get("nextPageToken")
+print(f"Found {len(calendars)} calendars.")
 
-    if not page_token:
-        break
+for calendar in calendars:
 
-print(f"Retrieved {len(events)} calendar events.")
+    calendar_id = calendar["id"]
+    calendar_name = calendar.get("summary", "Unknown")
+
+    print(f"Retrieving events from: {calendar_name}")
+
+    page_token = None
+
+    while True:
+
+        result = calendar_service.events().list(
+            calendarId=calendar_id,
+            maxResults=2500,
+            singleEvents=True,
+            orderBy="startTime",
+            pageToken=page_token
+        ).execute()
+
+        calendar_events = result.get("items", [])
+
+        # Track which calendar each event came from
+        for event in calendar_events:
+            event["calendar_name"] = calendar_name
+
+        events.extend(calendar_events)
+
+        page_token = result.get("nextPageToken")
+
+        if not page_token:
+            break
+
+print(f"Retrieved {len(events)} events across all calendars.")
 
 # ----------------------------------
 # READ EXISTING SPREADSHEET DATA
 # ----------------------------------
 
-sheet_range = f"'{SHEET_NAME}'!A:F"
+sheet_range = f"'{SHEET_NAME}'!A:G"
 
 existing = sheets_service.spreadsheets().values().get(
     spreadsheetId=SPREADSHEET_ID,
@@ -147,10 +169,17 @@ for event in events:
         start_time,
         end_time,
         event.get("location", ""),
-        event.get("description", "")
+        event.get("description", ""),
+        event.get("calendar_name", "")
     ]
 
-    new_rows.append(row)
+    # Only include events that start and end on the same day in 2027
+    if start_time and end_time:
+        start_date = start_time[:10]
+        end_date = end_time[:10]
+
+        if start_date == end_date and start_date.startswith("2027"):
+            new_rows.append(row)
 
 # ----------------------------------
 # WRITE TO GOOGLE SHEETS
