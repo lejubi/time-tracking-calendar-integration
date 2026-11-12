@@ -19,6 +19,22 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets"
 ]
 
+from datetime import datetime, timedelta
+
+def round_to_half_hour(time_string):
+    dt = datetime.fromisoformat(time_string)
+
+    minutes = dt.minute
+
+    if minutes < 15:
+        dt = dt.replace(minute=0, second=0, microsecond=0)
+    elif minutes < 45:
+        dt = dt.replace(minute=30, second=0, microsecond=0)
+    else:
+        dt = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+    return dt.isoformat()
+
 # ----------------------------------
 # AUTHENTICATION
 # ----------------------------------
@@ -155,13 +171,14 @@ for event in events:
     start = event.get("start", {})
     end = event.get("end", {})
 
-    start_time = start.get(
-        "dateTime", start.get("date", "")
-    )
+    start_time = start.get("dateTime", start.get("date", ""))
+    end_time = end.get("dateTime", end.get("date", ""))
 
-    end_time = end.get(
-        "dateTime", end.get("date", "")
-    )
+    if "T" in start_time:
+        start_time = round_to_half_hour(start_time)
+
+    if "T" in end_time:
+        end_time = round_to_half_hour(end_time)
 
     row = [
         event_id,
