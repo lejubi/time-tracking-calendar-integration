@@ -35,6 +35,15 @@ def round_to_half_hour(time_string):
 
     return dt.isoformat()
 
+def get_time_column(time_string):
+    dt = datetime.fromisoformat(time_string)
+
+    # Number of half-hour increments since midnight
+    increment = (dt.hour * 60 + dt.minute) // 30
+
+    # D is column 4, so add 4
+    return 4 + increment
+
 # ----------------------------------
 # AUTHENTICATION
 # ----------------------------------
@@ -85,32 +94,34 @@ for calendar in calendars:
     calendar_id = calendar["id"]
     calendar_name = calendar.get("summary", "Unknown")
 
-    print(f"Retrieving events from: {calendar_name}")
+    if (calendar_name in ["school", "clubs", "tests", "other", "friends", "classes", "family"]):
 
-    page_token = None
+        print(f"Retrieving events from: {calendar_name}")
 
-    while True:
+        page_token = None
 
-        result = calendar_service.events().list(
-            calendarId=calendar_id,
-            maxResults=2500,
-            singleEvents=True,
-            orderBy="startTime",
-            pageToken=page_token
-        ).execute()
+        while True:
 
-        calendar_events = result.get("items", [])
+            result = calendar_service.events().list(
+                calendarId=calendar_id,
+                maxResults=2500,
+                singleEvents=True,
+                orderBy="startTime",
+                pageToken=page_token
+            ).execute()
 
-        # Track which calendar each event came from
-        for event in calendar_events:
-            event["calendar_name"] = calendar_name
+            calendar_events = result.get("items", [])
 
-        events.extend(calendar_events)
+            # Track which calendar each event came from
+            for event in calendar_events:
+                event["calendar_name"] = calendar_name
 
-        page_token = result.get("nextPageToken")
+            events.extend(calendar_events)
 
-        if not page_token:
-            break
+            page_token = result.get("nextPageToken")
+
+            if not page_token:
+                break
 
 print(f"Retrieved {len(events)} events across all calendars.")
 
@@ -137,15 +148,15 @@ if not existing_values:
     headers = [[
         "Event ID",
         "Title",
-        "Start",
-        "End",
-        "Location",
-        "Description"
+        "Date",
+    ] + [
+        f"{(i // 2):02d}:{'00' if i % 2 == 0 else '30'}"
+        for i in range(48)
     ]]
 
     sheets_service.spreadsheets().values().update(
         spreadsheetId=SPREADSHEET_ID,
-        range=f"'{SHEET_NAME}'!A1:F1",
+        range=f"'{SHEET_NAME}'!A1:AY1",
         valueInputOption="RAW",
         body={"values": headers}
     ).execute()
@@ -157,38 +168,21 @@ if not existing_values:
 new_rows = []
 
 for event in events:
+    event_id = event["id"]
+    title = event.get("summary", "")
 
-    # Skip cancelled events
-    if event.get("status") == "cancelled":
-        continue
-
-    event_id = event.get("id")
-
-    # Skip events already in spreadsheet
-    if not event_id or event_id in existing_ids:
-        continue
-
-    start = event.get("start", {})
-    end = event.get("end", {})
+    start = event["start"]
+    end = event["end"]
 
     start_time = start.get("dateTime", start.get("date", ""))
     end_time = end.get("dateTime", end.get("date", ""))
 
+    # Round start and end times
     if "T" in start_time:
         start_time = round_to_half_hour(start_time)
 
     if "T" in end_time:
         end_time = round_to_half_hour(end_time)
-
-    row = [
-        event_id,
-        event.get("summary", ""),
-        start_time,
-        end_time,
-        event.get("location", ""),
-        event.get("description", ""),
-        event.get("calendar_name", "")
-    ]
 
     # Only include events that start and end on the same day in 2027
     if start_time and end_time:
@@ -196,6 +190,26 @@ for event in events:
         end_date = end_time[:10]
 
         if start_date == end_date and start_date.startswith("2027"):
+
+            # Determine which columns the event occupies
+            start_col = get_time_column(start_time)
+            end_col = get_time_column(end_time)
+
+            # Create 48 empty half-hour slots
+            time_slots = [""] * 48
+
+            # Mark occupied slots
+            for col in range(start_col, end_col):
+                if 4 <= col <= 51:
+                    time_slots[col - 4] = 1
+
+            # Create spreadsheet row
+            row = [
+                event_id,
+                title,
+                start_date,
+            ] + time_slots
+
             new_rows.append(row)
 
 # ----------------------------------
