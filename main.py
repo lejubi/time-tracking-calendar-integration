@@ -146,9 +146,9 @@ existing_ids = {
 # Add headers if the sheet is empty
 if not existing_values:
     headers = [[
-        "Event ID",
-        "Title",
-        "Date",
+        "이주나",
+        "",
+        "date",
     ] + [
         f"{(i // 2):02d}:{'00' if i % 2 == 0 else '30'}"
         for i in range(48)
@@ -162,10 +162,13 @@ if not existing_values:
     ).execute()
 
 # ----------------------------------
-# PROCESS NEW EVENTS
+# PROCESS EVENTS INTO DAILY GRID
 # ----------------------------------
 
-new_rows = []
+# Create 365 rows, each with 51 columns (A:AY)
+# First 3 columns are blank
+# Last 48 columns represent half-hour increments
+year_data = [[""] * 51 for _ in range(365)]
 
 for event in events:
     event_id = event["id"]
@@ -177,66 +180,55 @@ for event in events:
     start_time = start.get("dateTime", start.get("date", ""))
     end_time = end.get("dateTime", end.get("date", ""))
 
+    # Skip all-day events
+    if "T" not in start_time or "T" not in end_time:
+        continue
+
+    # Get original dates
+    original_start_date = start_time[:10]
+    original_end_date = end_time[:10]
+
+    # Only include events in 2027 that start and end on the same day
+    if original_start_date != original_end_date:
+        continue
+
+    if not original_start_date.startswith("2027"):
+        continue
+
     # Round start and end times
-    if "T" in start_time:
-        start_time = round_to_half_hour(start_time)
+    start_time = round_to_half_hour(start_time)
+    end_time = round_to_half_hour(end_time)
 
-    if "T" in end_time:
-        end_time = round_to_half_hour(end_time)
+    # Get the day of the year (January 1 = 1)
+    event_date = datetime.fromisoformat(original_start_date)
+    day_index = event_date.timetuple().tm_yday - 1
 
-    # Only include events that start and end on the same day in 2027
-    if start_time and end_time:
-        start_date = start_time[:10]
-        end_date = end_time[:10]
+    # Determine occupied half-hour slots
+    start_col = get_time_column(start_time)
+    end_col = get_time_column(end_time)
 
-        if start_date == end_date and start_date.startswith("2027"):
+    for col in range(start_col, end_col):
 
-            # Determine which columns the event occupies
-            start_col = get_time_column(start_time)
-            end_col = get_time_column(end_time)
+        # Only allow columns D through AY
+        if 4 <= col <= 51:
 
-            # Create 48 empty half-hour slots
-            time_slots = [""] * 48
+            # Store event title in the corresponding cell
+            existing_title = year_data[day_index][col - 1]
 
-            # Mark occupied slots
-            for col in range(start_col, end_col):
-                if 4 <= col <= 51:
-                    time_slots[col - 4] = 1
-
-            # Create spreadsheet row
-            row = [
-                event_id,
-                title,
-                start_date,
-            ] + time_slots
-
-            new_rows.append(row)
+            if existing_title:
+                year_data[day_index][col - 1] += ", " + title
+            else:
+                year_data[day_index][col - 1] = title
 
 # ----------------------------------
 # WRITE TO GOOGLE SHEETS
 # ----------------------------------
 
-if new_rows:
+sheets_service.spreadsheets().values().update(
+    spreadsheetId=SPREADSHEET_ID,
+    range=f"'{SHEET_NAME}'!A2:AY366",
+    valueInputOption="RAW",
+    body={"values": year_data}
+).execute()
 
-    sheets_service.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=sheet_range,
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body={"values": new_rows}
-    ).execute()
-
-    print(f"Added {len(new_rows)} new events!")
-
-else:
-    print("No new events to add.")
-
-print("Number of events retrieved:", len(events))
-
-for event in events[:5]:
-    print(
-        event.get("summary"),
-        event.get("start")
-    )
-
-print("Finished!")
+print("Successfully updated the 2027 calendar grid!")
