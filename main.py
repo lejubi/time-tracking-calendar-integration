@@ -212,14 +212,8 @@ for event in events:
         # Only allow columns D through AY
         if 4 <= col <= 51:
 
-            # Store event title in the corresponding cell
-            existing_title = year_data[day_index][col - 1]
-
-            if existing_title:
-                year_data[day_index][col - 1] += ", " + title
-            else:
-                year_data[day_index][col - 1] = title
-
+            # Mark occupied time slot
+            year_data[day_index][col - 1] = 1
 # ----------------------------------
 # WRITE TO GOOGLE SHEETS
 # ----------------------------------
