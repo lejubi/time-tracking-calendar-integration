@@ -94,7 +94,7 @@ for calendar in calendars:
     calendar_id = calendar["id"]
     calendar_name = calendar.get("summary", "Unknown")
 
-    if (calendar_name in ["school", "clubs", "tests", "other", "friends", "classes", "family"]):
+    if (calendar_name in ["school", "clubs", "tests", "eating", "friends", "classes", "family"]):
 
         print(f"Retrieving events from: {calendar_name}")
 
